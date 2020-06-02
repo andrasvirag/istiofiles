@@ -1,0 +1,337 @@
+### ServiceAccount 'myweb-account' start ###
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: test
+  name: myweb-account 
+  labels:
+    app: myweb
+---
+
+### ServiceAccount 'myweb-account' end ###
+
+
+### Deployment 'myweb-master-deployment' start ###
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: test
+  name: myweb-master-deployment
+  labels:
+    app: myweb 
+    version: master 
+spec:
+  replicas: 2 
+  selector:
+    matchLabels:
+      app: myweb 
+      version: master 
+  template:
+    metadata:
+      labels:
+        app: myweb 
+        version: master 
+    spec:
+      serviceAccountName: myweb-account 
+      containers:
+        - name: myweb 
+          image: avirag/helloworld:sha-5f346ca 
+          imagePullPolicy: Always ###TODO: consider converting this to a parameter?
+          ports:
+            - name: http
+              containerPort: 80 
+              protocol: TCP
+          env:
+          - name: SLOT
+            value: master
+          - name: BACKENDURL
+            value: http://mywebapi-master-service/api/hello
+          - name: CLIENTID
+            value: e9cdf614-bdd1-40be-b148-b6274aabfcca
+          - name: TENANTID
+            value: 37733171-d7b1-4da8-b1b5-2ac6c457e2bd
+---
+
+### Deployment 'myweb-master-deployment' end ###
+
+
+### Service 'myweb-master-service' start ###
+
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: test
+  name: myweb-master-service 
+  labels:
+    app: myweb 
+    service: myweb-master-service 
+spec:
+  type: ClusterIP #fixed for now
+  ports:
+    - port: 80 ### ServicePort where the Service accepts traffic on
+      targetPort: http #This is the port where the container listens
+      protocol: TCP
+      name: http
+  selector:
+    app: myweb
+---
+
+
+### Service 'myweb-master-service' end ###
+
+
+### DestinationRule 'myweb-master-destinationrule' start ###
+
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  namespace: test
+  name: myweb-master-destinationrule
+spec:
+  host: myweb-master-service
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+  subsets:
+  - name: master
+    labels:
+      version: master
+  - name: staging
+    labels:
+      version: staging
+---
+
+### DestinationRule 'myweb-master-destinationrule' end ###
+
+
+### VirtualService 'myweb-master-virtualservice' start ###
+
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  namespace: test
+  name: myweb-master-virtualservice 
+spec:
+  hosts:
+  - myweb.test.demo.com
+  gateways:
+  - myweb-master-gateway
+  http:
+    - name: cookie-master
+      match:
+      - queryParams:
+          slot:
+            exact: master
+      - headers:
+          cookie:
+            regex: "^(.*?)?(slot=master)(;.*)?$"
+      route:
+        - destination:
+            host: myweb-master-service 
+            subset: master 
+    - name: cookie-staging
+      match:
+      - queryParams:
+          slot:
+            exact: staging
+      - headers:
+          cookie:
+            regex: "^(.*?)?(slot=staging)(;.*)?$"
+      route:
+        - destination:
+            host: myweb-staging-service 
+            subset: staging 
+    - name: app
+      route:
+        - destination:
+            host: myweb-master-service 
+            subset: master 
+          weight: 100
+        - destination:
+            host: myweb-staging-service 
+            subset: staging 
+          weight: 0
+---
+
+### VirtualService 'myweb-master-virtualservice' end ###
+
+
+### Gateway 'myweb-master-gateway' start ###
+
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  namespace: test
+  name: myweb-master-gateway
+spec:
+  selector:
+    istio: ingressgateway # use istio default controller - leave it to the default for now
+  servers:
+  - port:
+      number: 80
+      name: http-custom
+      protocol: HTTP
+    hosts:
+    - myweb.test.demo.com 
+---
+
+### Gateway 'myweb-master-gateway' end ###
+
+
+### Deployment 'myweb-staging-deployment' start ###
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: test
+  name: myweb-staging-deployment
+  labels:
+    app: myweb 
+    version: staging 
+spec:
+  replicas: 2 
+  selector:
+    matchLabels:
+      app: myweb 
+      version: staging 
+  template:
+    metadata:
+      labels:
+        app: myweb 
+        version: staging 
+    spec:
+      serviceAccountName: myweb-account 
+      containers:
+        - name: myweb 
+          image: avirag/helloworld:sha-3fd8f7f 
+          imagePullPolicy: Always ###TODO: consider converting this to a parameter?
+          ports:
+            - name: http
+              containerPort: 80 
+              protocol: TCP
+          env:
+          - name: SLOT
+            value: staging
+          - name: BACKENDURL
+            value: http://mywebapi-master-service/api/hello
+          - name: CLIENTID
+            value: e9cdf614-bdd1-40be-b148-b6274aabfcca
+          - name: TENANTID
+            value: 37733171-d7b1-4da8-b1b5-2ac6c457e2bd
+---
+
+### Deployment 'myweb-staging-deployment' end ###
+
+
+### Service 'myweb-staging-service' start ###
+
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: test
+  name: myweb-staging-service 
+  labels:
+    app: myweb 
+    service: myweb-staging-service 
+spec:
+  type: ClusterIP #fixed for now
+  ports:
+    - port: 80 ### ServicePort where the Service accepts traffic on
+      targetPort: http #This is the port where the container listens
+      protocol: TCP
+      name: http
+  selector:
+    app: myweb
+---
+
+
+### Service 'myweb-staging-service' end ###
+
+
+### DestinationRule 'myweb-staging-destinationrule' start ###
+
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  namespace: test
+  name: myweb-staging-destinationrule
+spec:
+  host: myweb-staging-service
+  trafficPolicy:
+    tls:
+      mode: ISTIO_MUTUAL
+  subsets:
+  - name: staging
+    labels:
+      version: staging
+---
+
+### DestinationRule 'myweb-staging-destinationrule' end ###
+
+
+### VirtualService 'myweb-staging-virtualservice' start ###
+
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  namespace: test
+  name: myweb-staging-virtualservice 
+spec:
+  hosts:
+  - myweb-staging.test.demo.com
+  gateways:
+  - myweb-staging-gateway
+  http:
+    - name: app
+      route:
+        - destination:
+            host: myweb-staging-service 
+            subset: staging 
+          weight: 100
+---
+
+### VirtualService 'myweb-staging-virtualservice' end ###
+
+
+### Gateway 'myweb-staging-gateway' start ###
+
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  namespace: test
+  name: myweb-staging-gateway
+spec:
+  selector:
+    istio: ingressgateway # use istio default controller - leave it to the default for now
+  servers:
+  - port:
+      number: 80
+      name: http-custom
+      protocol: HTTP
+    hosts:
+    - myweb-staging.test.demo.com 
+---
+
+### Gateway 'myweb-staging-gateway' end ###
+
+
+### AuthorizationPolicy 'myweb-authorizationpolicy' start ###
+
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: myweb-authorizationpolicy
+  namespace: test
+spec:  
+  selector:
+    matchLabels:
+      app: myweb
+  action: ALLOW
+  rules:
+  - {}
+---
+### AuthorizationPolicy 'myweb-authorizationpolicy' end ###
+
+
